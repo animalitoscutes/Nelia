@@ -1,0 +1,48 @@
+# ==============================================================================
+# NELIA Suite - Git Ignore Configuration
+# ==============================================================================
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment Variables & Secrets
+.env
+.env.local
+
+# Local Databases (PostgreSQL fallback & local runs)
+*.db
+*.sqlite
+*.sqlite3
+nelia_local.db
+nelia.db
+
+# Docker Data
+pgdata/
+
+# Logs & System Files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary Scripts
+test_*.py
+scratch/
