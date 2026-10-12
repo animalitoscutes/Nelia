@@ -33,6 +33,7 @@ class ChatRequest(BaseModel):
     context: StoryContext
     agent_type: str = "cowriter" # "cowriter" or "architect"
     model: Optional[str] = None
+    history: Optional[List[dict]] = None
 
 class ChatResponse(BaseModel):
     reply: str
@@ -92,6 +93,7 @@ async def chat_endpoint(req: ChatRequest):
             context=req.context,
             agent_type=req.agent_type,
             model_name=model_to_use,
+            history=req.history or [],
         )
         snippet = extract_story_snippet(reply_text)
         return ChatResponse(

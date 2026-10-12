@@ -22,12 +22,13 @@ class SendMessageThread(QThread):
     responseReceived = Signal(dict)
     errorOccurred = Signal(str)
 
-    def __init__(self, prompt: str, context_dict: dict, agent_type: str, model: str):
+    def __init__(self, prompt: str, context_dict: dict, agent_type: str, model: str, history: list = None):
         super().__init__()
         self.prompt = prompt
         self.context_dict = context_dict
         self.agent_type = agent_type
         self.model = model
+        self.history = history or []
 
     def run(self):
         try:
@@ -35,7 +36,8 @@ class SendMessageThread(QThread):
                 "prompt": self.prompt,
                 "context": self.context_dict,
                 "agent_type": self.agent_type,
-                "model": self.model
+                "model": self.model,
+                "history": self.history
             }
             from ai.config import FASTAPI_HOST, FASTAPI_PORT
             url = f"http://{FASTAPI_HOST}:{FASTAPI_PORT}/api/chat"
@@ -52,7 +54,7 @@ class SendMessageThread(QThread):
 class ChatMessageBubble(QFrame):
     insertRequested = Signal(str)
 
-    def __init__(self, role: str, text: str, snippet: str = None, model_name: str = None, parent=None):
+    def __init__(self, role: str, text: str, snippet: str = None, model_name: str = None, agent_type: str = "cowriter", parent=None):
         super().__init__(parent)
         self.snippet = snippet
         self.setObjectName("ChatBubble")
@@ -75,18 +77,32 @@ class ChatMessageBubble(QFrame):
                 }
             """)
         else:
-            tag = f"🤖 IA CO-ESCRITOR ({model_name})" if model_name else "🤖 IA CO-ESCRITOR"
-            lbl_role = QLabel(tag)
-            lbl_role.setStyleSheet("color: #60a5fa; font-weight: 700; font-size: 11px;")
-            self.setStyleSheet("""
-                QFrame#ChatBubble {
-                    background-color: #17171d;
-                    border: 1px solid #272732;
-                    border-left: 3px solid #60a5fa;
-                    border-radius: 8px;
-                    margin-right: 20px;
-                }
-            """)
+            if agent_type == "architect":
+                tag = f"🧠 ARQUITECTO DE TRAMAS ({model_name})" if model_name else "🧠 ARQUITECTO DE TRAMAS"
+                lbl_role = QLabel(tag)
+                lbl_role.setStyleSheet("color: #c084fc; font-weight: 700; font-size: 11px;")
+                self.setStyleSheet("""
+                    QFrame#ChatBubble {
+                        background-color: #1a1528;
+                        border: 1px solid #3b2d54;
+                        border-left: 3px solid #c084fc;
+                        border-radius: 8px;
+                        margin-right: 20px;
+                    }
+                """)
+            else:
+                tag = f"🎬 CO-ESCRITOR IA ({model_name})" if model_name else "🎬 CO-ESCRITOR IA"
+                lbl_role = QLabel(tag)
+                lbl_role.setStyleSheet("color: #60a5fa; font-weight: 700; font-size: 11px;")
+                self.setStyleSheet("""
+                    QFrame#ChatBubble {
+                        background-color: #17171d;
+                        border: 1px solid #272732;
+                        border-left: 3px solid #60a5fa;
+                        border-radius: 8px;
+                        margin-right: 20px;
+                    }
+                """)
         header.addWidget(lbl_role)
         header.addStretch()
         layout.addLayout(header)
@@ -165,13 +181,34 @@ class AIChatDock(QFrame):
         header.addWidget(self.btn_model_select)
         layout.addLayout(header)
 
-        # 2. Agent Focus selector
+        # 2. Agent Focus selector + Clear Chat Button
         sub_header = QHBoxLayout()
         sub_header.addWidget(QLabel("Modo:"))
         self.combo_agent = QComboBox()
         self.combo_agent.addItem("🎬 Co-Escritor (Escenas y Diálogos)", "cowriter")
         self.combo_agent.addItem("🧠 Arquitecto (Tramas y Personajes)", "architect")
-        sub_header.addWidget(self.combo_agent)
+        self.combo_agent.currentIndexChanged.connect(self._on_agent_mode_changed)
+        sub_header.addWidget(self.combo_agent, 1)
+
+        self.btn_clear_chat = QPushButton("🧹")
+        self.btn_clear_chat.setToolTip("Limpiar conversación para empezar de cero con otra idea")
+        self.btn_clear_chat.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_chat.setStyleSheet("""
+            QPushButton {
+                background-color: #27272a;
+                color: #a1a1aa;
+                border: 1px solid #3f3f46;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #dc2626;
+                color: #ffffff;
+            }
+        """)
+        self.btn_clear_chat.clicked.connect(self.clear_conversation)
+        sub_header.addWidget(self.btn_clear_chat)
         layout.addLayout(sub_header)
 
         # 3. Small explanatory message explaining what the function does (non-intrusive)
@@ -217,6 +254,7 @@ class AIChatDock(QFrame):
 
         self.context_provider = None
         self.current_thread = None
+        self.chat_history: list[dict] = []
 
     def set_context_provider(self, func):
         """Callback to fetch real-time document context from the editor."""
@@ -302,8 +340,23 @@ class AIChatDock(QFrame):
         except Exception:
             pass
 
-    def _add_bubble(self, role: str, text: str, snippet: str = None, model_name: str = None):
-        bubble = ChatMessageBubble(role, text, snippet, model_name)
+    def _on_agent_mode_changed(self):
+        agent_type = self.combo_agent.currentData()
+        if agent_type == "architect":
+            self.lbl_help.setText("🧠 Modo Arquitecto: Diseño conceptual de tramas, premisas, arcos dramáticos y psicología de personajes.")
+        else:
+            self.lbl_help.setText("🎬 Modo Co-Escritor: Redacción de escenas, diálogos verosímiles y acciones listas para el guion.")
+
+    def clear_conversation(self):
+        """Limpia la memoria y los mensajes del chat para empezar un nuevo hilo."""
+        self.chat_history.clear()
+        while self.messages_layout.count() > 1:
+            item = self.messages_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _add_bubble(self, role: str, text: str, snippet: str = None, model_name: str = None, agent_type: str = "cowriter"):
+        bubble = ChatMessageBubble(role, text, snippet, model_name=model_name, agent_type=agent_type)
         bubble.insertRequested.connect(self.insertSnippetToDocument.emit)
         count = self.messages_layout.count()
         self.messages_layout.insertWidget(count - 1, bubble)
@@ -317,14 +370,17 @@ class AIChatDock(QFrame):
             return
 
         self.input_edit.clear()
-        self._add_bubble("user", text)
+        agent_type = self.combo_agent.currentData()
+        self._add_bubble("user", text, agent_type=agent_type)
+
+        # Guardar en memoria de conversación para mantener contexto multi-turno
+        self.chat_history.append({"role": "user", "content": text})
 
         # Gather context
         context_dict = {}
         if self.context_provider:
             context_dict = self.context_provider()
 
-        agent_type = self.combo_agent.currentData()
         self.btn_send.setEnabled(False)
         self.progress_bar.show()
 
@@ -333,7 +389,8 @@ class AIChatDock(QFrame):
             prompt=text,
             context_dict=context_dict,
             agent_type=agent_type,
-            model=self.current_model
+            model=self.current_model,
+            history=list(self.chat_history)
         )
         self.current_thread.responseReceived.connect(self._on_response)
         self.current_thread.errorOccurred.connect(self._on_error)
@@ -347,7 +404,11 @@ class AIChatDock(QFrame):
         reply = data.get("reply", "")
         snippet = data.get("suggested_snippet")
         model_used = data.get("model_used", self.current_model)
-        self._add_bubble("assistant", reply, snippet, model_name=model_used)
+        agent_used = data.get("agent_used", self.combo_agent.currentData())
+        
+        self.chat_history.append({"role": "assistant", "content": reply})
+        self._add_bubble("assistant", reply, snippet, model_name=model_used, agent_type=agent_used)
 
     def _on_error(self, err_msg: str):
-        self._add_bubble("assistant", f"⚠️ {err_msg}", model_name=self.current_model)
+        agent_type = self.combo_agent.currentData()
+        self._add_bubble("assistant", f"⚠️ {err_msg}", model_name=self.current_model, agent_type=agent_type)
