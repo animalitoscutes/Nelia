@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=NELIA
+Comment=Suite de Escritura Creativa y Guion Cinematografico
+Exec=bash -c "cd $(dirname %k) && ./run.sh"
+Icon=assets/icon_256.png
+Terminal=false
+Categories=Office;WordProcessor;Development;
